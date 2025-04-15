@@ -27,6 +27,7 @@ export default function AccessPassGenerator() {
     }
   }
 
+  // Updated download function with Safari compatibility
   const downloadPass = async () => {
     if (!passRef.current) return
 
@@ -38,12 +39,46 @@ export default function AccessPassGenerator() {
       })
 
       const image = canvas.toDataURL("image/png")
-      const link = document.createElement("a")
-      link.href = image
-      link.download = `${firstName}-${lastName}-access-pass.png`
-      link.click()
+
+      // Create a filename
+      const filename = `${firstName || "access"}-${lastName || "pass"}-${Date.now()}.png`
+
+      // Check if it's Safari
+      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+
+      if (isSafari) {
+        // Safari approach - open in new tab
+        const newTab = window.open()
+        if (newTab) {
+          newTab.document.write(`
+            <html>
+              <head>
+                <title>Download Access Pass</title>
+              </head>
+              <body style="margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #f5f5f5; font-family: Arial, sans-serif;">
+                <div style="text-align: center; max-width: 600px; padding: 20px;">
+                  <h2 style="margin-bottom: 20px;">Your Access Pass is Ready</h2>
+                  <p style="margin-bottom: 30px;">Right-click on the image below and select "Save Image As..." to download your access pass.</p>
+                  <img src="${image}" alt="Access Pass" style="max-width: 100%; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
+                  <p style="margin-top: 30px; color: #666;">You can close this tab after saving your access pass.</p>
+                </div>
+              </body>
+            </html>
+          `)
+          newTab.document.close()
+        }
+      } else {
+        // Standard approach for other browsers
+        const link = document.createElement("a")
+        link.href = image
+        link.download = filename
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+      }
     } catch (error) {
       console.error("Error generating image:", error)
+      alert("There was an error generating your access pass. Please try again.")
     }
   }
 
