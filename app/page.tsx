@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react"
 import Image from "next/image"
-import { Camera, Download } from "lucide-react"
+import { Camera, Download, X } from "lucide-react"
 import html2canvas from "html2canvas"
 
 export default function AccessPassGenerator() {
@@ -12,6 +12,8 @@ export default function AccessPassGenerator() {
   const [membershipLength, setMembershipLength] = useState("1 Month")
   const [profileImage, setProfileImage] = useState("/placeholder.svg?height=200&width=200")
   const [parkingBay, setParkingBay] = useState("")
+  const [showDownloadModal, setShowDownloadModal] = useState(false)
+  const [downloadImageUrl, setDownloadImageUrl] = useState("")
   const passRef = useRef(null)
 
   const handleImageUpload = (e) => {
@@ -27,8 +29,8 @@ export default function AccessPassGenerator() {
     }
   }
 
-  // Updated download function with Safari compatibility
-  const downloadPass = async () => {
+  // Generate the pass image and show the download modal
+  const generatePass = async () => {
     if (!passRef.current) return
 
     try {
@@ -39,46 +41,31 @@ export default function AccessPassGenerator() {
       })
 
       const image = canvas.toDataURL("image/png")
-
-      // Create a filename
-      const filename = `${firstName || "access"}-${lastName || "pass"}-${Date.now()}.png`
-
-      // Check if it's Safari
-      const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
-
-      if (isSafari) {
-        // Safari approach - open in new tab
-        const newTab = window.open()
-        if (newTab) {
-          newTab.document.write(`
-            <html>
-              <head>
-                <title>Download Access Pass</title>
-              </head>
-              <body style="margin: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; background-color: #f5f5f5; font-family: Arial, sans-serif;">
-                <div style="text-align: center; max-width: 600px; padding: 20px;">
-                  <h2 style="margin-bottom: 20px;">Your Access Pass is Ready</h2>
-                  <p style="margin-bottom: 30px;">Right-click on the image below and select "Save Image As..." to download your access pass.</p>
-                  <img src="${image}" alt="Access Pass" style="max-width: 100%; box-shadow: 0 4px 8px rgba(0,0,0,0.1);" />
-                  <p style="margin-top: 30px; color: #666;">You can close this tab after saving your access pass.</p>
-                </div>
-              </body>
-            </html>
-          `)
-          newTab.document.close()
-        }
-      } else {
-        // Standard approach for other browsers
-        const link = document.createElement("a")
-        link.href = image
-        link.download = filename
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-      }
+      setDownloadImageUrl(image)
+      setShowDownloadModal(true)
     } catch (error) {
       console.error("Error generating image:", error)
       alert("There was an error generating your access pass. Please try again.")
+    }
+  }
+
+  // Try to download directly (for non-Safari browsers)
+  const downloadImage = () => {
+    if (!downloadImageUrl) return
+
+    const filename = `${firstName || "access"}-${lastName || "pass"}-${Date.now()}.png`
+
+    try {
+      // Create a temporary link element
+      const link = document.createElement("a")
+      link.href = downloadImageUrl
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+    } catch (error) {
+      console.error("Error downloading:", error)
+      // If direct download fails, keep the modal open so user can save manually
     }
   }
 
@@ -260,11 +247,11 @@ export default function AccessPassGenerator() {
             </div>
 
             <button
-              onClick={downloadPass}
+              onClick={generatePass}
               className="w-full bg-[#EF4137] text-white py-2 px-4 rounded-md hover:bg-[#d93a31] transition-colors flex items-center justify-center"
             >
               <Download className="mr-2 h-5 w-5" />
-              Download Access Pass
+              Generate Access Pass
             </button>
           </div>
 
@@ -390,6 +377,45 @@ export default function AccessPassGenerator() {
           </div>
         </div>
       </div>
+
+      {/* Download Modal - Safari Compatible Solution */}
+      {showDownloadModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            <div className="p-6">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-xl font-bold">Your Access Pass is Ready</h3>
+                <button onClick={() => setShowDownloadModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <X size={24} />
+                </button>
+              </div>
+
+              <div className="text-center mb-6">
+                <p className="text-gray-600 mb-2">Click the button below to download your access pass.</p>
+                <p className="text-gray-600 mb-4">
+                  <strong>Safari users:</strong> If the download button doesn't work, right-click (or press and hold) on
+                  the image and select "Save Image As..."
+                </p>
+
+                <button
+                  onClick={downloadImage}
+                  className="bg-[#EF4137] text-white py-2 px-6 rounded-md hover:bg-[#d93a31] transition-colors mb-6"
+                >
+                  <Download className="inline mr-2 h-5 w-5" />
+                  Download Access Pass
+                </button>
+              </div>
+
+              <div className="flex justify-center">
+                <div className="border border-gray-300 rounded-lg overflow-hidden shadow-lg">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={downloadImageUrl || "/placeholder.svg"} alt="Access Pass" className="max-w-full h-auto" />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
