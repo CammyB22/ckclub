@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react"
 import Image from "next/image"
 import { Camera, Download, X } from "lucide-react"
 import html2canvas from "html2canvas"
@@ -14,7 +14,17 @@ export default function AccessPassGenerator() {
   const [parkingBay, setParkingBay] = useState("")
   const [showDownloadModal, setShowDownloadModal] = useState(false)
   const [downloadImageUrl, setDownloadImageUrl] = useState("")
+  const [isGenerating, setIsGenerating] = useState(false)
+  const [errorMessage, setErrorMessage] = useState("")
+  const [isSafari, setIsSafari] = useState(false)
   const passRef = useRef(null)
+
+  // Detect Safari browser on component mount
+  useEffect(() => {
+    const isSafariBrowser = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
+    setIsSafari(isSafariBrowser)
+    console.log("Browser detection:", { isSafari: isSafariBrowser, userAgent: navigator.userAgent })
+  }, [])
 
   const handleImageUpload = (e) => {
     const file = e.target.files?.[0]
@@ -31,27 +41,53 @@ export default function AccessPassGenerator() {
 
   // Generate the pass image and show the download modal
   const generatePass = async () => {
-    if (!passRef.current) return
+    if (!passRef.current) {
+      setErrorMessage("Could not find the pass element to capture.")
+      return
+    }
+
+    setIsGenerating(true)
+    setErrorMessage("")
 
     try {
-      const canvas = await html2canvas(passRef.current, {
+      console.log("Starting html2canvas capture...")
+
+      // Special options for Safari
+      const options = {
         scale: 2,
         backgroundColor: null,
-        logging: false,
-      })
+        logging: true, // Enable logging for debugging
+        allowTaint: true, // Allow tainted canvas
+        useCORS: true, // Use CORS to handle cross-origin images
+        // For Safari, we need to be more permissive with security
+        foreignObjectRendering: false, // Disable foreignObject rendering which can cause issues in Safari
+      }
+
+      console.log("html2canvas options:", options)
+
+      const canvas = await html2canvas(passRef.current, options)
+      console.log("Canvas created successfully")
 
       const image = canvas.toDataURL("image/png")
+      console.log("Image data URL created")
+
       setDownloadImageUrl(image)
       setShowDownloadModal(true)
     } catch (error) {
       console.error("Error generating image:", error)
-      alert("There was an error generating your access pass. Please try again.")
+      setErrorMessage(`Error generating image: ${error.message || "Unknown error"}`)
+      alert("There was an error generating your access pass. Please check the console for details.")
+    } finally {
+      setIsGenerating(false)
     }
   }
 
   // Try to download directly (for non-Safari browsers)
   const downloadImage = () => {
-    if (!downloadImageUrl) return
+    if (!downloadImageUrl) {
+      setErrorMessage("No image available to download.")
+      return
+    }
 
     const filename = `${firstName || "access"}-${lastName || "pass"}-${Date.now()}.png`
 
@@ -65,7 +101,39 @@ export default function AccessPassGenerator() {
       document.body.removeChild(link)
     } catch (error) {
       console.error("Error downloading:", error)
+      setErrorMessage(`Error downloading: ${error.message || "Unknown error"}`)
       // If direct download fails, keep the modal open so user can save manually
+    }
+  }
+
+  // Alternative method for Safari - open in new window
+  const openInNewWindow = () => {
+    if (!downloadImageUrl) return
+
+    const newWindow = window.open()
+    if (newWindow) {
+      newWindow.document.write(`
+        <html>
+          <head>
+            <title>Access Pass</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
+              body { margin: 0; padding: 20px; font-family: Arial, sans-serif; text-align: center; }
+              img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }
+              .instructions { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; }
+            </style>
+          </head>
+          <body>
+            <h2>Your Access Pass</h2>
+            <div class="instructions">
+              <p><strong>To save this image:</strong></p>
+              <p>Press and hold (or right-click) on the image below and select "Save Image"</p>
+            </div>
+            <img src="${downloadImageUrl}" alt="Access Pass">
+          </body>
+        </html>
+      `)
+      newWindow.document.close()
     }
   }
 
@@ -155,6 +223,13 @@ export default function AccessPassGenerator() {
         <div className="text-center mb-12">
           <h1 className="text-3xl font-bold text-gray-900 sm:text-4xl">CKClub Pass Generator</h1>
           <p className="mt-3 text-xl text-gray-600">Internal tool for team members to generate member access passes</p>
+          {isSafari && (
+            <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-yellow-700">
+                <strong>Safari detected:</strong> For best results, please use Chrome or Firefox.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -248,11 +323,37 @@ export default function AccessPassGenerator() {
 
             <button
               onClick={generatePass}
-              className="w-full bg-[#EF4137] text-white py-2 px-4 rounded-md hover:bg-[#d93a31] transition-colors flex items-center justify-center"
+              disabled={isGenerating}
+              className="w-full bg-[#EF4137] text-white py-2 px-4 rounded-md hover:bg-[#d93a31] transition-colors flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              <Download className="mr-2 h-5 w-5" />
-              Generate Access Pass
+              {isGenerating ? (
+                <>
+                  <span className="mr-2">Generating...</span>
+                  <span className="animate-spin">⏳</span>
+                </>
+              ) : (
+                <>
+                  <Download className="mr-2 h-5 w-5" />
+                  Generate Access Pass
+                </>
+              )}
             </button>
+
+            {errorMessage && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
+                {errorMessage}
+              </div>
+            )}
+
+            {isSafari && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-blue-700 text-sm">
+                <p className="font-medium">Safari Users:</p>
+                <p>
+                  After clicking "Generate Access Pass", you'll see a preview. Click "Open in New Window" and then save
+                  the image from there.
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Preview */}
@@ -391,19 +492,31 @@ export default function AccessPassGenerator() {
               </div>
 
               <div className="text-center mb-6">
-                <p className="text-gray-600 mb-2">Click the button below to download your access pass.</p>
-                <p className="text-gray-600 mb-4">
-                  <strong>Safari users:</strong> If the download button doesn't work, right-click (or press and hold) on
-                  the image and select "Save Image As..."
-                </p>
-
-                <button
-                  onClick={downloadImage}
-                  className="bg-[#EF4137] text-white py-2 px-6 rounded-md hover:bg-[#d93a31] transition-colors mb-6"
-                >
-                  <Download className="inline mr-2 h-5 w-5" />
-                  Download Access Pass
-                </button>
+                {isSafari ? (
+                  <>
+                    <p className="text-gray-600 mb-4">
+                      <strong>Safari users:</strong> Click the button below to open your pass in a new window, then save
+                      it from there.
+                    </p>
+                    <button
+                      onClick={openInNewWindow}
+                      className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition-colors mb-6"
+                    >
+                      Open in New Window
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-gray-600 mb-4">Click the button below to download your access pass.</p>
+                    <button
+                      onClick={downloadImage}
+                      className="bg-[#EF4137] text-white py-2 px-6 rounded-md hover:bg-[#d93a31] transition-colors mb-6"
+                    >
+                      <Download className="inline mr-2 h-5 w-5" />
+                      Download Access Pass
+                    </button>
+                  </>
+                )}
               </div>
 
               <div className="flex justify-center">
