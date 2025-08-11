@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from "react"
 import Image from "next/image"
-import { Camera, Download, X } from "lucide-react"
+import { Camera, Download, X, Calendar } from "lucide-react"
 import html2canvas from "html2canvas"
 
 export default function AccessPassGenerator() {
@@ -10,6 +10,7 @@ export default function AccessPassGenerator() {
   const [lastName, setLastName] = useState("")
   const [membershipType, setMembershipType] = useState("Essential Membership")
   const [membershipLength, setMembershipLength] = useState("1 Month")
+  const [startDate, setStartDate] = useState("")
   const [profileImage, setProfileImage] = useState("/placeholder.svg?height=200&width=200")
   const [parkingBay, setParkingBay] = useState("")
   const [showDownloadModal, setShowDownloadModal] = useState(false)
@@ -17,13 +18,22 @@ export default function AccessPassGenerator() {
   const [isGenerating, setIsGenerating] = useState(false)
   const [errorMessage, setErrorMessage] = useState("")
   const [isSafari, setIsSafari] = useState(false)
+  const [passId, setPassId] = useState("")
   const passRef = useRef(null)
+
+  // Generate a new ID when component mounts and set default start date to today
+  useEffect(() => {
+    setPassId(generateID())
+    // Set default start date to today
+    const today = new Date()
+    const formattedDate = today.toISOString().split("T")[0]
+    setStartDate(formattedDate)
+  }, [])
 
   // Detect Safari browser on component mount
   useEffect(() => {
     const isSafariBrowser = /^((?!chrome|android).)*safari/i.test(navigator.userAgent)
     setIsSafari(isSafariBrowser)
-    console.log("Browser detection:", { isSafari: isSafariBrowser, userAgent: navigator.userAgent })
   }, [])
 
   const handleImageUpload = (e) => {
@@ -39,6 +49,26 @@ export default function AccessPassGenerator() {
     }
   }
 
+  // Validate the selected start date
+  const validateStartDate = (dateString) => {
+    if (!dateString) return "Please select a start date"
+
+    const selectedDate = new Date(dateString)
+    const today = new Date()
+    const oneYearAgo = new Date()
+    oneYearAgo.setFullYear(today.getFullYear() - 1)
+    const oneYearFromNow = new Date()
+    oneYearFromNow.setFullYear(today.getFullYear() + 1)
+
+    if (selectedDate < oneYearAgo) {
+      return "Start date cannot be more than 1 year in the past"
+    }
+    if (selectedDate > oneYearFromNow) {
+      return "Start date cannot be more than 1 year in the future"
+    }
+    return null
+  }
+
   // Generate the pass image and show the download modal
   const generatePass = async () => {
     if (!passRef.current) {
@@ -46,37 +76,38 @@ export default function AccessPassGenerator() {
       return
     }
 
+    // Validate start date before generating
+    const dateValidationError = validateStartDate(startDate)
+    if (dateValidationError) {
+      setErrorMessage(dateValidationError)
+      return
+    }
+
     setIsGenerating(true)
     setErrorMessage("")
 
     try {
-      console.log("Starting html2canvas capture...")
-
-      // Special options for Safari
-      const options = {
-        scale: 2,
-        backgroundColor: null,
-        logging: true, // Enable logging for debugging
-        allowTaint: true, // Allow tainted canvas
-        useCORS: true, // Use CORS to handle cross-origin images
-        // For Safari, we need to be more permissive with security
-        foreignObjectRendering: false, // Disable foreignObject rendering which can cause issues in Safari
+      // For Safari, we'll skip html2canvas and just show the modal
+      if (isSafari) {
+        // Just show the modal with instructions for Safari users
+        setShowDownloadModal(true)
+        setIsGenerating(false)
+        return
       }
 
-      console.log("html2canvas options:", options)
-
-      const canvas = await html2canvas(passRef.current, options)
-      console.log("Canvas created successfully")
+      // For other browsers, use html2canvas
+      const canvas = await html2canvas(passRef.current, {
+        scale: 2,
+        backgroundColor: null,
+        logging: false,
+      })
 
       const image = canvas.toDataURL("image/png")
-      console.log("Image data URL created")
-
       setDownloadImageUrl(image)
       setShowDownloadModal(true)
     } catch (error) {
       console.error("Error generating image:", error)
       setErrorMessage(`Error generating image: ${error.message || "Unknown error"}`)
-      alert("There was an error generating your access pass. Please check the console for details.")
     } finally {
       setIsGenerating(false)
     }
@@ -102,39 +133,12 @@ export default function AccessPassGenerator() {
     } catch (error) {
       console.error("Error downloading:", error)
       setErrorMessage(`Error downloading: ${error.message || "Unknown error"}`)
-      // If direct download fails, keep the modal open so user can save manually
     }
   }
 
-  // Alternative method for Safari - open in new window
-  const openInNewWindow = () => {
-    if (!downloadImageUrl) return
-
-    const newWindow = window.open()
-    if (newWindow) {
-      newWindow.document.write(`
-        <html>
-          <head>
-            <title>Access Pass</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              body { margin: 0; padding: 20px; font-family: Arial, sans-serif; text-align: center; }
-              img { max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }
-              .instructions { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 4px; }
-            </style>
-          </head>
-          <body>
-            <h2>Your Access Pass</h2>
-            <div class="instructions">
-              <p><strong>To save this image:</strong></p>
-              <p>Press and hold (or right-click) on the image below and select "Save Image"</p>
-            </div>
-            <img src="${downloadImageUrl}" alt="Access Pass">
-          </body>
-        </html>
-      `)
-      newWindow.document.close()
-    }
+  // Print the pass (Safari alternative)
+  const printPass = () => {
+    window.print()
   }
 
   const getMembershipColor = () => {
@@ -194,6 +198,38 @@ export default function AccessPassGenerator() {
     return "CK" + Math.random().toString(36).substring(2, 8).toUpperCase()
   }
 
+  // Calculate expiry date based on selected start date
+  const calculateExpiryDate = () => {
+    if (!startDate) return "Invalid Date"
+
+    const start = new Date(startDate)
+    const months = Number.parseInt(membershipLength.split(" ")[0])
+    const expiry = new Date(start)
+    expiry.setMonth(start.getMonth() + months)
+    return expiry.toLocaleDateString()
+  }
+
+  // Format start date for display
+  const formatStartDate = () => {
+    if (!startDate) return "Not Selected"
+    const date = new Date(startDate)
+    return date.toLocaleDateString()
+  }
+
+  // Get minimum date (1 year ago) for date input
+  const getMinDate = () => {
+    const oneYearAgo = new Date()
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    return oneYearAgo.toISOString().split("T")[0]
+  }
+
+  // Get maximum date (1 year from now) for date input
+  const getMaxDate = () => {
+    const oneYearFromNow = new Date()
+    oneYearFromNow.setFullYear(oneYearFromNow.getFullYear() + 1)
+    return oneYearFromNow.toISOString().split("T")[0]
+  }
+
   // Gotham Bold style to be applied to all text
   const gothamBoldStyle = {
     fontFamily: "'Gotham Bold', 'Arial Bold', 'Helvetica Neue', sans-serif",
@@ -226,7 +262,8 @@ export default function AccessPassGenerator() {
           {isSafari && (
             <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded-md">
               <p className="text-yellow-700">
-                <strong>Safari detected:</strong> For best results, please use Chrome or Firefox.
+                <strong>Safari detected:</strong> After clicking "Generate Access Pass", you'll be able to take a
+                screenshot or print the pass.
               </p>
             </div>
           )}
@@ -321,6 +358,25 @@ export default function AccessPassGenerator() {
               </select>
             </div>
 
+            {/* New Date Selection Feature */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                <Calendar className="inline w-4 h-4 mr-1" />
+                Membership Start Date
+              </label>
+              <input
+                type="date"
+                value={startDate}
+                onChange={(e) => setStartDate(e.target.value)}
+                min={getMinDate()}
+                max={getMaxDate()}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Selected: {formatStartDate()} | Expires: {calculateExpiryDate()}
+              </p>
+            </div>
+
             <button
               onClick={generatePass}
               disabled={isGenerating}
@@ -349,8 +405,8 @@ export default function AccessPassGenerator() {
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded text-blue-700 text-sm">
                 <p className="font-medium">Safari Users:</p>
                 <p>
-                  After clicking "Generate Access Pass", you'll see a preview. Click "Open in New Window" and then save
-                  the image from there.
+                  After clicking "Generate Access Pass", you'll see a preview. You can take a screenshot or use the
+                  print option.
                 </p>
               </div>
             )}
@@ -455,16 +511,9 @@ export default function AccessPassGenerator() {
 
                   <div className="mt-6 w-full relative z-10">
                     <div className="border-t border-gray-600 pt-4">
-                      <div className="text-center text-gray-300 text-sm">ID: {generateID()}</div>
-                      <div className="text-center text-gray-300 text-sm mt-1">
-                        Valid until: {(() => {
-                          const today = new Date()
-                          const months = Number.parseInt(membershipLength.split(" ")[0])
-                          const expiry = new Date(today)
-                          expiry.setMonth(today.getMonth() + months)
-                          return expiry.toLocaleDateString()
-                        })()}
-                      </div>
+                      <div className="text-center text-gray-300 text-sm">ID: {passId}</div>
+                      <div className="text-center text-gray-300 text-sm mt-1">Start: {formatStartDate()}</div>
+                      <div className="text-center text-gray-300 text-sm mt-1">Valid until: {calculateExpiryDate()}</div>
                     </div>
                   </div>
                 </div>
@@ -495,14 +544,14 @@ export default function AccessPassGenerator() {
                 {isSafari ? (
                   <>
                     <p className="text-gray-600 mb-4">
-                      <strong>Safari users:</strong> Click the button below to open your pass in a new window, then save
-                      it from there.
+                      <strong>Safari users:</strong> Please take a screenshot of your pass below or use the print
+                      option.
                     </p>
                     <button
-                      onClick={openInNewWindow}
+                      onClick={printPass}
                       className="bg-blue-600 text-white py-2 px-6 rounded-md hover:bg-blue-700 transition-colors mb-6"
                     >
-                      Open in New Window
+                      Print Pass
                     </button>
                   </>
                 ) : (
@@ -521,14 +570,146 @@ export default function AccessPassGenerator() {
 
               <div className="flex justify-center">
                 <div className="border border-gray-300 rounded-lg overflow-hidden shadow-lg">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={downloadImageUrl || "/placeholder.svg"} alt="Access Pass" className="max-w-full h-auto" />
+                  {isSafari ? (
+                    // For Safari, render the pass directly in the modal
+                    <div
+                      className="w-full max-w-md aspect-[2/3] rounded-xl overflow-hidden shadow-lg bg-[#3C3B39] relative flex flex-col"
+                      style={gothamBoldStyle}
+                    >
+                      {/* Card Content */}
+                      <div className="flex flex-col flex-grow relative z-10">
+                        {/* Header with Logo */}
+                        <div className={`${getMembershipColor()} flex items-center justify-center py-3 px-4`}>
+                          <div className="h-10 md:h-12">
+                            {/* Use img instead of Image for Safari */}
+                            <img
+                              src={getMembershipLogo() || "/placeholder.svg"}
+                              alt={`${membershipType} Logo`}
+                              className="h-full w-auto"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Profile */}
+                        <div className="flex-grow bg-[#3C3B39] flex flex-col items-center justify-center p-6 text-white relative">
+                          {/* Grid Pattern for Card Background */}
+                          <div
+                            className="absolute inset-0 pointer-events-none"
+                            style={{
+                              backgroundImage: `
+                                linear-gradient(to right, rgba(255, 255, 255, 0.3) 1px, transparent 1px),
+                                linear-gradient(to bottom, rgba(255, 255, 255, 0.3) 1px, transparent 1px)
+                              `,
+                              backgroundSize: "40px 40px",
+                              backgroundPosition: "center center",
+                            }}
+                          />
+
+                          <div className="relative z-10">
+                            <div className="h-44 w-44 rounded-full overflow-hidden border-4 border-gray-600 mb-6">
+                              {/* Use img instead of Image for Safari */}
+                              <img
+                                src={profileImage || "/placeholder.svg"}
+                                alt="Profile"
+                                className="h-full w-full object-cover"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="relative z-10 w-full flex flex-col items-center">
+                            <h2 className="text-3xl text-white text-center tracking-wide mb-4 uppercase">
+                              {firstName || "First"} {lastName || "Last"}
+                            </h2>
+
+                            {/* Membership type and month blocks */}
+                            <div className="flex flex-col items-center gap-2 w-full">
+                              <div
+                                className={`${getMembershipBlockStyle().background} h-12 flex items-center justify-center w-full`}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                              >
+                                <h3
+                                  className={`text-xl ${getMembershipBlockStyle().text} text-center m-0`}
+                                  style={{ margin: 0, padding: 0 }}
+                                >
+                                  {membershipType || "Essential Membership"}
+                                </h3>
+                              </div>
+
+                              {/* Parking Bay Number (only shown for Parking Membership) */}
+                              {isParkingMembership && parkingBay && (
+                                <div
+                                  className={`${getMembershipBlockStyle().background} h-12 flex items-center justify-center w-full`}
+                                  style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                                >
+                                  <p
+                                    className={`text-base ${getMembershipBlockStyle().text} whitespace-nowrap text-center m-0`}
+                                    style={{ margin: 0, padding: 0 }}
+                                  >
+                                    Bay: {parkingBay}
+                                  </p>
+                                </div>
+                              )}
+
+                              <div
+                                className={`${getMembershipBlockStyle().background} h-12 flex items-center justify-center w-full`}
+                                style={{ display: "flex", alignItems: "center", justifyContent: "center" }}
+                              >
+                                <p
+                                  className={`text-base ${getMembershipBlockStyle().text} whitespace-nowrap text-center m-0`}
+                                  style={{ margin: 0, padding: 0 }}
+                                >
+                                  {membershipLength}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mt-6 w-full relative z-10">
+                            <div className="border-t border-gray-600 pt-4">
+                              <div className="text-center text-gray-300 text-sm">ID: {passId}</div>
+                              <div className="text-center text-gray-300 text-sm mt-1">Start: {formatStartDate()}</div>
+                              <div className="text-center text-gray-300 text-sm mt-1">
+                                Valid until: {calculateExpiryDate()}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Footer - Solid black background */}
+                      <div className="bg-black text-white h-14 flex items-center justify-center text-sm relative z-20">
+                        <p className="text-base text-white">CK Club Access Pass</p>
+                      </div>
+                    </div>
+                  ) : (
+                    // For other browsers, show the generated image
+                    <img src={downloadImageUrl || "/placeholder.svg"} alt="Access Pass" className="max-w-full h-auto" />
+                  )}
                 </div>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Print-only styles */}
+      <style jsx global>{`
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          .modal-print-content,
+          .modal-print-content * {
+            visibility: visible;
+          }
+          .modal-print-content {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+          }
+        }
+      `}</style>
     </div>
   )
 }
